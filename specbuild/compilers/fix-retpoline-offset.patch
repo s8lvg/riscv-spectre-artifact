@@ -1,0 +1,45 @@
+diff --git a/llvm/lib/Target/RISCV/RISCVRegisterInfo.cpp b/llvm/lib/Target/RISCV/RISCVRegisterInfo.cpp
+index 262bc6e01..9cbcc3f32 100644
+--- a/llvm/lib/Target/RISCV/RISCVRegisterInfo.cpp
++++ b/llvm/lib/Target/RISCV/RISCVRegisterInfo.cpp
+@@ -506,28 +506,32 @@ bool RISCVRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
+         (MF.getSubtarget<RISCVSubtarget>().hasFeature(
+             RISCV::FeatureRetpoline)) &&
+         (MI.getOpcode() == RISCV::SW || MI.getOpcode() == RISCV::SD)) {
+-      // dbgs() << "In Retpoline → eliminateFrameIndex : update offset and framereg " << "\n"; 
+-      int64_t NewOffset = Offset.getFixed();
+-
++      // Special handling for ra/fp callee-saved register stores in retpoline mode.
++      // These need fixed offsets relative to SP for the split prologue to work.
++      // Other stores (local variables) should keep their computed offsets.
++      bool NeedsRetpolineFixup = false;
++      int64_t NewOffset = 0;
+       switch (MI.getOperand(0).getReg()) {
+-        //ra
+         case RISCV::X1: {
+           NewOffset = MI.getOpcode() == RISCV::SW ? 4 : 8;
+           FrameReg = RISCV::X2;
++          NeedsRetpolineFixup = true;
+           break;
+         }
+-        //fp
+         case RISCV::X8: {
+           NewOffset = 0;
+           FrameReg = RISCV::X2;
++          NeedsRetpolineFixup = true;
+           break;
+         }
+         default:
+           break;
+       }
+-      MI.getOperand(FIOperandNum)
+-        .ChangeToRegister(FrameReg, false, false, false);
+-      MI.getOperand(FIOperandNum + 1).ChangeToImmediate(NewOffset);
++      if (NeedsRetpolineFixup) {
++        MI.getOperand(FIOperandNum)
++          .ChangeToRegister(FrameReg, false, false, false);
++        MI.getOperand(FIOperandNum + 1).ChangeToImmediate(NewOffset);
++      }
+     }
+ 
+     MI.getOperand(FIOperandNum).ChangeToRegister(FrameReg, /*IsDef*/false,

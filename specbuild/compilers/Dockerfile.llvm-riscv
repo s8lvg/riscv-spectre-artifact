@@ -1,0 +1,74 @@
+# syntax=docker/dockerfile:1.4
+# =============================================================================
+# LLVM RISC-V Compiler with Spectre Mitigations
+# =============================================================================
+#
+# Builds LLVM 18 with RISC-V Spectre mitigations (SLH, fence, retpoline).
+# Output: /opt/llvm-riscv
+#
+# Build:
+#   DOCKER_BUILDKIT=1 docker build -f Dockerfile.llvm-riscv -t llvm-riscv .
+#
+# Export compiler for use with specbuild:
+#   docker run --rm llvm-riscv tar -C /opt -cf - llvm-riscv | gzip > llvm-riscv.tar.gz
+#
+# Or use as volume:
+#   docker run --rm -v llvm-riscv:/opt/llvm-riscv llvm-riscv cp -r /opt/llvm-riscv/. /opt/llvm-riscv/
+#
+# =============================================================================
+
+FROM ubuntu:22.04 AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    build-essential cmake ninja-build git python3 \
+    libxml2-dev zlib1g-dev libtinfo-dev libncurses5-dev ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Clone LLVM with RISC-V Spectre mitigations (Inria retpoline branch)
+RUN git clone -b retpoline --depth 1 \
+    https://gitlab.inria.fr/arsene-pepr/llvm-fence-spec.git llvm-src
+
+# Fix retpoline local variable addressing bug in RISCVRegisterInfo.cpp:
+# The original code in eliminateFrameIndex incorrectly zeroed stack offsets
+# for ALL SW/SD instructions when retpoline was enabled. This should only
+# apply to ra (X1) and fp (X8) callee-saved register saves, not to local
+# variable stores. The fix adds a check to only modify offsets for X1/X8.
+COPY fix-retpoline-offset.patch /build/
+RUN cd llvm-src && git apply /build/fix-retpoline-offset.patch
+
+# Build LLVM with BuildKit cache
+RUN --mount=type=cache,target=/build/cache,sharing=locked \
+    mkdir -p /build/cache/build && \
+    cd /build/cache/build && \
+    cmake -G Ninja /build/llvm-src/llvm \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DLLVM_ENABLE_PROJECTS="clang;lld" \
+        -DLLVM_TARGETS_TO_BUILD="RISCV" \
+        -DLLVM_DEFAULT_TARGET_TRIPLE="riscv64-linux-gnu" \
+        -DCMAKE_INSTALL_PREFIX=/opt/llvm-riscv \
+        -DLLVM_ENABLE_ASSERTIONS=OFF \
+        -DLLVM_PARALLEL_LINK_JOBS=2 && \
+    ninja -j$(nproc) clang lld && \
+    ninja install
+
+# =============================================================================
+# Minimal output image (just the compiler)
+# =============================================================================
+FROM ubuntu:22.04
+
+RUN apt-get update && apt-get install -y \
+    libxml2 zlib1g libtinfo6 libncurses6 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /opt/llvm-riscv /opt/llvm-riscv
+
+ENV PATH="/opt/llvm-riscv/bin:${PATH}"
+
+# Verify it works
+RUN clang --version
+
+CMD ["clang", "--version"]

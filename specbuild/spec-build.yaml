@@ -1,0 +1,35 @@
+# SPEC CPU 2017 Cross-Compilation Config
+
+spec_cpu:
+  path: ./cpu2017/spec_cpu
+
+targets:
+  lab46:
+    arch: riscv64
+    sysroot: ./sysroots/lab46-sysroot
+    configs:
+      - configs/riscv64-gcc.cfg
+
+  lab46-llvm:
+    arch: riscv64
+    sysroot: ./sysroots/lab46-sysroot
+    configs:
+      - configs/riscv64-baseline.cfg
+      - configs/riscv64-slh.cfg
+      - configs/riscv64-fence.cfg
+      - configs/riscv64-retpoline.cfg
+
+  lab47:
+    arch: aarch64
+    sysroot: ./sysroots/lab47-sysroot
+    configs:
+      - configs/arm64-gcc.cfg
+
+  lab85:
+    arch: loongarch64
+    sysroot: ./sysroots/lab85-sysroot
+    configs:
+      - configs/loongarch64-gcc.cfg
+
+output:
+  dir: ./packages

@@ -1,0 +1,127 @@
+#
+# Copyright (c) 2022-present, IO Visor Project
+# All rights reserved.
+#
+# This source code is licensed in accordance with the terms specified in
+# the LICENSE file found in the root directory of this source tree.
+#
+
+name: Windows
+
+on:
+  workflow_call:
+    inputs:
+      platform:
+        required: true
+        type: string
+
+      build_type:
+        required: true
+        type: string
+
+      upload_packages:
+        required: false
+        type: boolean
+        default: false
+
+      build_codeql:
+        required: false
+        type: boolean
+        default: false
+
+      disable_retpolines:
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    permissions:
+      actions: read  # for github/codeql-action/init to get workflow details
+      contents: read  # for actions/checkout to fetch code
+      security-events: write  # for github/codeql-action/analyze to upload SARIF results
+    runs-on: ${{ inputs.platform }}
+
+    steps:
+    - name: Harden Runner
+      uses: step-security/harden-runner@20cf305ff2072d973412fa9b1e3a4f227bda3c76 # v2.14.0
+      with:
+        egress-policy: audit
+
+    - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      with:
+        submodules: 'recursive'
+
+    - name: Initialize CodeQL
+      if: inputs.build_codeql == true
+      uses: github/codeql-action/init@cdefb33c0f6224e58673d9004f47f7cb3e328b89
+      with:
+        languages: 'cpp'
+
+    - name: Cache the build folder
+      uses: actions/cache@8b402f58fbc84540c8b491a91e594a4576fec3d7
+      env:
+        cache-name: cache-nuget-modules
+      with:
+        path: build
+        key: ${{ matrix.platform }}-${{ matrix.arch }}-${{ hashFiles('**/CMakeLists.txt') }}-${{ hashFiles('.github/workflows/windows.yml') }}
+
+    - name: Configure uBPF
+      run: |
+        cmake `
+          -S . `
+          -B build `
+          -DUBPF_ENABLE_TESTS=true `
+          -DUBPF_DISABLE_RETPOLINES=${{ inputs.disable_retpolines }} `
+          -DUBPF_ENABLE_INSTALL=true
+
+    - name: Build uBPF
+      run: |
+        cmake `
+          --build build `
+          --config ${{ inputs.build_type }}
+
+    - name: Run the CTest suite
+      run: |
+        cd build
+        ctest --output-on-failure --build-config ${{ inputs.build_type }}
+
+    - name: Rerun failed tests with more verbose output
+      if: inputs.platform == 'ubuntu-latest' && failure()
+      working-directory: ${{github.workspace}}/build
+      run: |
+        ctest --rerun-failed --output-on-failure
+
+    - name: Generate the TGZ package
+      run: |
+        cmake `
+          -S . `
+          -B build `
+          -DUBPF_ENABLE_PACKAGE=true `
+          -DCPACK_GENERATOR=TGZ
+
+        cmake `
+          --build build `
+          --target package
+
+    - name: Locate the packages
+      id: package_locations
+      if: inputs.upload_packages == true
+      shell: bash
+      run: |
+        echo "REL_TGZ_PACKAGE_PATH=$(ls build/*.tar.gz)" >> $GITHUB_OUTPUT
+
+    - name: Upload the Windows TGZ package
+      if: inputs.upload_packages == true
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+      with:
+        name: windows_tgz_package
+        path: ${{ steps.package_locations.outputs.REL_TGZ_PACKAGE_PATH }}
+        retention-days: 5
+
+    - name: Perform CodeQL Analysis
+      if: inputs.build_codeql == true
+      uses: github/codeql-action/analyze@cdefb33c0f6224e58673d9004f47f7cb3e328b89

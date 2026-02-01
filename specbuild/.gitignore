@@ -1,0 +1,16 @@
+# Extracted sysroots (only keep tarballs)
+sysroots/*-sysroot/
+
+# Extracted SPEC CPU
+cpu2017/
+
+# Build outputs
+packages/
+
+# Python cache files
+__pycache__/
+*.pyc
+
+# VS Code settings
+.vscode/
+

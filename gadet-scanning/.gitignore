@@ -1,0 +1,24 @@
+# Exclude kernel source (too large, not needed in repo)
+results/*/kernel/
+
+# Exclude CodeQL databases (too large, rebuilt on demand)
+results/*/codeql-db/
+
+# Exclude uncompressed results (keep only compressed archives tracked by LFS)
+results/**/*.csv
+results/**/*.sarif
+results/**/*.txt
+results/**/*.log
+results/**/*.json
+
+# Keep compressed archives (tracked by Git LFS via .gitattributes)
+!results/**/*.tar.gz
+!results/**/*.tar.xz
+
+# Mitigation analysis tool outputs
+analysis_results/
+mitigation_diffing/.cache/
+mitigation_diffing/.embedding_cache/
+mitigation_diffing/*.json
+mitigation_diffing/*.csv
+mitigation_diffing/*.html

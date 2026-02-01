@@ -1,0 +1,6 @@
+# Git LFS tracking for large files
+*.tar.gz filter=lfs diff=lfs merge=lfs -text
+*.tar.xz filter=lfs diff=lfs merge=lfs -text
+*.tar.bz2 filter=lfs diff=lfs merge=lfs -text
+*.iso filter=lfs diff=lfs merge=lfs -text
+sysroots/*.tar.gz filter=lfs diff=lfs merge=lfs -text

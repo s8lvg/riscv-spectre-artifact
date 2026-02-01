@@ -1,0 +1,154 @@
+From: Fix RISC-V Retpoline Two-Phase Prologue
+
+This patch fixes the RISC-V retpoline implementation to correctly generate
+two-phase prologues as required by the skip-prologue design.
+
+The retpoline mitigation works by:
+1. Caller's retpoline allocates 16 bytes and stores return address at sp+8
+2. Retpoline jumps to target+8, skipping target's Phase 1 allocation and ra store
+3. Target's Phase 1 (16 bytes for ra/fp) is effectively shared with retpoline's frame
+
+For this to work, the callee must have:
+- Phase 1: addi sp,-16; sd ra,8(sp); sd fp,0(sp)  [first 12 bytes]
+- Phase 2: addi sp,-N; sd s1,X(sp); ...           [remaining allocation]
+
+The bug in the original implementation was that Phase 1 allocated space for
+ALL callee-saved registers instead of just ra/fp (16 bytes).
+
+This patch:
+1. Fixes RISCVFrameLowering.cpp to allocate only 16 bytes in Phase 1
+2. Inserts Phase 2 allocation after ra/fp stores (not at the end)
+3. Fixes RISCVRegisterInfo.cpp to use fixed offsets for ra/fp stores
+
+diff --git a/llvm/lib/Target/RISCV/RISCVFrameLowering.cpp b/llvm/lib/Target/RISCV/RISCVFrameLowering.cpp
+index 8a1234567..9b2345678 100644
+--- a/llvm/lib/Target/RISCV/RISCVFrameLowering.cpp
++++ b/llvm/lib/Target/RISCV/RISCVFrameLowering.cpp
+@@ -544,17 +544,17 @@ void RISCVFrameLowering::emitPrologue(MachineFunction &MF,
+     RealStackSize = FirstSPAdjustAmount;
+   }
+
+-  //Currently, only ra and fp are saved, but we need to know their size
++  // For retpoline: Phase 1 allocates exactly 16 bytes (ra + fp on RV64)
++  // This is required for the skip-prologue design where retpoline jumps to target+8
+   uint64_t Size = 0;
+   if (STI.hasFeature(RISCV::FeatureRetpoline)) {
+-    // dbgs() << "In Retpoline → FrameLowering::emitPrologue : update size of ra(x1)/fp(x8) " << "\n";
+-    for (const auto &Info : MFI.getCalleeSavedInfo()) {
+-      int FrameIdx = Info.getFrameIdx();
+-      if (MFI.getStackID(FrameIdx) != TargetStackID::Default)
+-        continue;
+-
+-      Size += MFI.getObjectSize(FrameIdx);
++    // Phase 1 size: exactly ra (8 bytes) + fp (8 bytes) = 16 bytes on RV64
++    unsigned XLen = STI.getXLen();
++    for (const auto &CS : MFI.getCalleeSavedInfo()) {
++      Register Reg = CS.getReg();
++      if (Reg == RISCV::X1 || Reg == RISCV::X8) {
++        Size += XLen / 8;
++      }
+     }
+
+     // Allocate space for ra and fp on the stack
+@@ -586,9 +586,28 @@ void RISCVFrameLowering::emitPrologue(MachineFunction &MF,
+
+   const auto &CSI = MFI.getCalleeSavedInfo();
+
+-  // The frame pointer is callee-saved, and code has been generated for us to
+-  // save it to the stack. We need to skip over the storing of callee-saved
+-  // registers as the frame pointer must be modified after it has been saved
+-  // to the stack, not before.
+-  // FIXME: assumes exactly one instruction is used to save each callee-saved
+-  // register.
+-  std::advance(MBBI, getUnmanagedCSI(MF, CSI).size());
++  if (STI.hasFeature(RISCV::FeatureRetpoline)) {
++    // For retpoline two-phase prologue:
++    // 1. Phase 1 allocation already done above (16 bytes for ra/fp)
++    // 2. Skip past ra and fp stores (exactly 2 instructions)
++    // 3. Insert Phase 2 allocation here
++    // 4. Then skip past remaining callee-saved stores
++
++    // Count ra/fp stores to skip
++    unsigned RaFpStores = 0;
++    for (const auto &CS : CSI) {
++      if (CS.getReg() == RISCV::X1 || CS.getReg() == RISCV::X8)
++        RaFpStores++;
++    }
++    std::advance(MBBI, RaFpStores);
++
++    // Insert Phase 2 allocation (remaining stack space)
++    if (Size < StackSize) {
++      RI->adjustReg(MBB, MBBI, DL, SPReg, SPReg,
++                    StackOffset::getFixed(-(int64_t)(StackSize - Size)),
++                    MachineInstr::FrameSetup, getStackAlign());
++    }
++
++    // Skip remaining callee-saved stores
++    std::advance(MBBI, getUnmanagedCSI(MF, CSI).size() - RaFpStores);
++  } else {
++    // Non-retpoline: skip all callee-saved stores at once
++    std::advance(MBBI, getUnmanagedCSI(MF, CSI).size());
++  }
+
+   // Iterate over list of callee-saved registers and emit .cfi_offset
+@@ -668,12 +687,6 @@ void RISCVFrameLowering::emitPrologue(MachineFunction &MF,
+     }
+   }
+
+-  ////Adjust sp again
+-  if (STI.hasFeature(RISCV::FeatureRetpoline) && Size < StackSize){
+-    // dbgs() << "In Retpoline → FrameLowering::emitPrologue : adjustReg stack pointer " << "\n";
+-    RI->adjustReg(MBB, MBBI, DL, SPReg, SPReg,
+-                  StackOffset::getFixed(Size-StackSize),
+-                  MachineInstr::FrameSetup, getStackAlign());
+-  }
++  // Phase 2 allocation for retpoline is now done earlier, after ra/fp stores
+
+   if (RVVStackSize) {
+diff --git a/llvm/lib/Target/RISCV/RISCVRegisterInfo.cpp b/llvm/lib/Target/RISCV/RISCVRegisterInfo.cpp
+index 262bc6e01..9cbcc3f32 100644
+--- a/llvm/lib/Target/RISCV/RISCVRegisterInfo.cpp
++++ b/llvm/lib/Target/RISCV/RISCVRegisterInfo.cpp
+@@ -506,28 +506,32 @@ bool RISCVRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
+         (MF.getSubtarget<RISCVSubtarget>().hasFeature(
+             RISCV::FeatureRetpoline)) &&
+         (MI.getOpcode() == RISCV::SW || MI.getOpcode() == RISCV::SD)) {
+-      // dbgs() << "In Retpoline → eliminateFrameIndex : update offset and framereg " << "\n";
+-      int64_t NewOffset = Offset.getFixed();
+-
++      // Retpoline two-phase prologue: ra/fp use fixed offsets within Phase 1
++      // Other callee-saved use their computed offsets (relative to final SP)
++      bool NeedsRetpolineFixup = false;
++      int64_t NewOffset = 0;
+       switch (MI.getOperand(0).getReg()) {
+-        //ra
+         case RISCV::X1: {
++          // ra at sp+8 (RV64) or sp+4 (RV32) within Phase 1 frame
+           NewOffset = MI.getOpcode() == RISCV::SW ? 4 : 8;
+           FrameReg = RISCV::X2;
++          NeedsRetpolineFixup = true;
+           break;
+         }
+-        //fp
+         case RISCV::X8: {
++          // fp at sp+0 within Phase 1 frame
+           NewOffset = 0;
+           FrameReg = RISCV::X2;
++          NeedsRetpolineFixup = true;
+           break;
+         }
+         default:
++          // Other callee-saved: keep computed offset (stored after Phase 2 alloc)
+           break;
+       }
+-      MI.getOperand(FIOperandNum)
+-        .ChangeToRegister(FrameReg, false, false, false);
+-      MI.getOperand(FIOperandNum + 1).ChangeToImmediate(NewOffset);
++      if (NeedsRetpolineFixup) {
++        MI.getOperand(FIOperandNum)
++          .ChangeToRegister(FrameReg, false, false, false);
++        MI.getOperand(FIOperandNum + 1).ChangeToImmediate(NewOffset);
++      }
+     }
+
+     MI.getOperand(FIOperandNum).ChangeToRegister(FrameReg, /*IsDef*/false,
