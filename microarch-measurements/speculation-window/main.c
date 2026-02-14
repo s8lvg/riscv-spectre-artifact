@@ -7,7 +7,7 @@
 #include <setjmp.h>
 #include <signal.h>
 #include "../cacheutils.h"
-#include "../libjit.h"
+#include "../../libjit.h"
 
 size_t __attribute__((aligned(4096))) probe[512 * 4096];
 volatile uint64_t __attribute__((aligned(4096))) idx_operand = 100;

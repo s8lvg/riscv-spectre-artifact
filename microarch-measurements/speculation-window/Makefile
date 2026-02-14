@@ -14,7 +14,7 @@ endif
 
 all: main
 
-main: main.c ../libjit.h
+main: main.c ../../libjit.h
 	$(CC) $(CFLAGS) main.c -o main
 
 clean:

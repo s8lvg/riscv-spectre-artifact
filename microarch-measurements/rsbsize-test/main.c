@@ -5,7 +5,7 @@
 
 size_t CACHE_MISS = 0;
 #include "../cacheutils.h"
-#include "../libjit.h"
+#include "../../libjit.h"
 
 #define MAX_DEPTH 40
 #define RUNS 1000000
