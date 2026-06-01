@@ -1,0 +1,78 @@
+From 8f0c15c4b14f27dd9bd35971adb9c908241f2f63 Mon Sep 17 00:00:00 2001
+From: Lukas Gerlach <lukas.gerlach@cispa.de>
+Date: Tue, 3 Mar 2026 15:19:43 +0100
+Subject: [PATCH] KVM: riscv: Fix Spectre-v1 in floating-point register access
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+User-controlled indices are used to index into floating-point registers.
+Sanitize them with array_index_nospec() to prevent speculative
+out-of-bounds access.
+
+Reviewed-by: Radim Krčmář <radim.krcmar@oss.qualcomm.com>
+Signed-off-by: Lukas Gerlach <lukas.gerlach@cispa.de>
+Link: https://lore.kernel.org/r/20260303-kvm-riscv-spectre-v1-v2-3-192caab8e0dc@cispa.de
+Signed-off-by: Anup Patel <anup@brainfault.org>
+---
+ arch/riscv/kvm/vcpu_fp.c | 17 +++++++++++++----
+ 1 file changed, 13 insertions(+), 4 deletions(-)
+
+diff --git a/arch/riscv/kvm/vcpu_fp.c b/arch/riscv/kvm/vcpu_fp.c
+index 030904d82b583e..bd5a9e7e716569 100644
+--- a/arch/riscv/kvm/vcpu_fp.c
++++ b/arch/riscv/kvm/vcpu_fp.c
+@@ -10,6 +10,7 @@
+ #include <linux/errno.h>
+ #include <linux/err.h>
+ #include <linux/kvm_host.h>
++#include <linux/nospec.h>
+ #include <linux/uaccess.h>
+ #include <asm/cpufeature.h>
+ 
+@@ -93,9 +94,11 @@ int kvm_riscv_vcpu_get_reg_fp(struct kvm_vcpu *vcpu,
+ 		if (reg_num == KVM_REG_RISCV_FP_F_REG(fcsr))
+ 			reg_val = &cntx->fp.f.fcsr;
+ 		else if ((KVM_REG_RISCV_FP_F_REG(f[0]) <= reg_num) &&
+-			  reg_num <= KVM_REG_RISCV_FP_F_REG(f[31]))
++			  reg_num <= KVM_REG_RISCV_FP_F_REG(f[31])) {
++			reg_num = array_index_nospec(reg_num,
++					ARRAY_SIZE(cntx->fp.f.f));
+ 			reg_val = &cntx->fp.f.f[reg_num];
+-		else
++		} else
+ 			return -ENOENT;
+ 	} else if ((rtype == KVM_REG_RISCV_FP_D) &&
+ 		   riscv_isa_extension_available(vcpu->arch.isa, d)) {
+@@ -107,6 +110,8 @@ int kvm_riscv_vcpu_get_reg_fp(struct kvm_vcpu *vcpu,
+ 			   reg_num <= KVM_REG_RISCV_FP_D_REG(f[31])) {
+ 			if (KVM_REG_SIZE(reg->id) != sizeof(u64))
+ 				return -EINVAL;
++			reg_num = array_index_nospec(reg_num,
++					ARRAY_SIZE(cntx->fp.d.f));
+ 			reg_val = &cntx->fp.d.f[reg_num];
+ 		} else
+ 			return -ENOENT;
+@@ -138,9 +143,11 @@ int kvm_riscv_vcpu_set_reg_fp(struct kvm_vcpu *vcpu,
+ 		if (reg_num == KVM_REG_RISCV_FP_F_REG(fcsr))
+ 			reg_val = &cntx->fp.f.fcsr;
+ 		else if ((KVM_REG_RISCV_FP_F_REG(f[0]) <= reg_num) &&
+-			  reg_num <= KVM_REG_RISCV_FP_F_REG(f[31]))
++			  reg_num <= KVM_REG_RISCV_FP_F_REG(f[31])) {
++			reg_num = array_index_nospec(reg_num,
++					ARRAY_SIZE(cntx->fp.f.f));
+ 			reg_val = &cntx->fp.f.f[reg_num];
+-		else
++		} else
+ 			return -ENOENT;
+ 	} else if ((rtype == KVM_REG_RISCV_FP_D) &&
+ 		   riscv_isa_extension_available(vcpu->arch.isa, d)) {
+@@ -152,6 +159,8 @@ int kvm_riscv_vcpu_set_reg_fp(struct kvm_vcpu *vcpu,
+ 			   reg_num <= KVM_REG_RISCV_FP_D_REG(f[31])) {
+ 			if (KVM_REG_SIZE(reg->id) != sizeof(u64))
+ 				return -EINVAL;
++			reg_num = array_index_nospec(reg_num,
++					ARRAY_SIZE(cntx->fp.d.f));
+ 			reg_val = &cntx->fp.d.f[reg_num];
+ 		} else
+ 			return -ENOENT;

@@ -1,0 +1,91 @@
+From 4080016d096cdecaef980fa37fbca91c5451a519 Mon Sep 17 00:00:00 2001
+From: Lukas Gerlach <lukas.gerlach@cispa.de>
+Date: Sun, 28 Dec 2025 18:17:55 +0100
+Subject: [PATCH] riscv, bpf: Emit fence.i for BPF_NOSPEC
+
+The BPF verifier inserts BPF_NOSPEC instructions to create speculation
+barriers. However, the RISC-V BPF JIT emits nothing for this
+instruction, leaving programs vulnerable to speculative execution
+attacks.
+
+Originally, BPF_NOSPEC was used only for Spectre v4 mitigation, programs
+containing potential Spectre v1 gadgets were rejected by the verifier.
+With the VeriFence changes, the verifier now accepts these
+programs and inserts BPF_NOSPEC barriers for Spectre v1 mitigation as
+well. On RISC-V, this means programs that were previously rejected are
+now accepted but left unprotected against both v1 and v4 attacks.
+
+RISC-V lacks a dedicated speculation barrier instruction.
+This patch uses the fence.i instruction as a stopgap solution.
+However an alternative and safer approach would be to reject vulnerable bpf
+programs again.
+
+Fixes: f5e81d111750 ("bpf: Introduce BPF nospec instruction for mitigating Spectre v4")
+Fixes: 5fcf896efe28 ("Merge branch 'bpf-mitigate-spectre-v1-using-barriers'")
+Signed-off-by: Lukas Gerlach <lukas.gerlach@cispa.de>
+---
+ arch/riscv/net/bpf_jit.h        | 10 ++++++++++
+ arch/riscv/net/bpf_jit_comp32.c |  6 +++++-
+ arch/riscv/net/bpf_jit_comp64.c |  6 +++++-
+ 3 files changed, 20 insertions(+), 2 deletions(-)
+
+diff --git a/arch/riscv/net/bpf_jit.h b/arch/riscv/net/bpf_jit.h
+index 632ced07bca4..e70b3bc19206 100644
+--- a/arch/riscv/net/bpf_jit.h
++++ b/arch/riscv/net/bpf_jit.h
+@@ -619,6 +619,16 @@ static inline void emit_fence_rw_rw(struct rv_jit_context *ctx)
+ 	emit(rv_fence(0x3, 0x3), ctx);
+ }
+ 
++static inline u32 rv_fence_i(void)
++{
++	return rv_i_insn(0, 0, 1, 0, 0x0f);
++}
++
++static inline void emit_fence_i(struct rv_jit_context *ctx)
++{
++	emit(rv_fence_i(), ctx);
++}
++
+ static inline u32 rv_nop(void)
+ {
+ 	return rv_i_insn(0, 0, 0, 0, 0x13);
+diff --git a/arch/riscv/net/bpf_jit_comp32.c b/arch/riscv/net/bpf_jit_comp32.c
+index 592dd86fbf81..d9a6f55a7e8e 100644
+--- a/arch/riscv/net/bpf_jit_comp32.c
++++ b/arch/riscv/net/bpf_jit_comp32.c
+@@ -1248,8 +1248,12 @@ int bpf_jit_emit_insn(const struct bpf_insn *insn, struct rv_jit_context *ctx,
+ 			return -1;
+ 		break;
+ 
+-	/* speculation barrier */
++	/*
++	 * Speculation barrier using fence.i for pipeline serialization.
++	 * RISC-V lacks a dedicated speculation barrier instruction.
++	 */
+ 	case BPF_ST | BPF_NOSPEC:
++		emit_fence_i(ctx);
+ 		break;
+ 
+ 	case BPF_ST | BPF_MEM | BPF_B:
+diff --git a/arch/riscv/net/bpf_jit_comp64.c b/arch/riscv/net/bpf_jit_comp64.c
+index 45cbc7c6fe49..fabafbebde0c 100644
+--- a/arch/riscv/net/bpf_jit_comp64.c
++++ b/arch/riscv/net/bpf_jit_comp64.c
+@@ -1864,8 +1864,12 @@ int bpf_jit_emit_insn(const struct bpf_insn *insn, struct rv_jit_context *ctx,
+ 		break;
+ 	}
+ 
+-	/* speculation barrier */
++	/*
++	 * Speculation barrier using fence.i for pipeline serialization.
++	 * RISC-V lacks a dedicated speculation barrier instruction.
++	 */
+ 	case BPF_ST | BPF_NOSPEC:
++		emit_fence_i(ctx);
+ 		break;
+ 
+ 	/* ST: *(size *)(dst + off) = imm */
+-- 
+2.51.0
+

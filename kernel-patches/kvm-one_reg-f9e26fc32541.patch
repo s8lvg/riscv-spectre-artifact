@@ -1,0 +1,140 @@
+From f9e26fc325411a34555ad07ddf0a19ff72ea06d4 Mon Sep 17 00:00:00 2001
+From: Lukas Gerlach <lukas.gerlach@cispa.de>
+Date: Tue, 3 Mar 2026 15:19:41 +0100
+Subject: [PATCH] KVM: riscv: Fix Spectre-v1 in ONE_REG register access
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+User-controlled register indices from the ONE_REG ioctl are used to
+index into arrays of register values. Sanitize them with
+array_index_nospec() to prevent speculative out-of-bounds access.
+
+Reviewed-by: Radim Krčmář <radim.krcmar@oss.qualcomm.com>
+Signed-off-by: Lukas Gerlach <lukas.gerlach@cispa.de>
+Link: https://lore.kernel.org/r/20260303-kvm-riscv-spectre-v1-v2-1-192caab8e0dc@cispa.de
+Signed-off-by: Anup Patel <anup@brainfault.org>
+---
+ arch/riscv/kvm/vcpu_onereg.c | 36 ++++++++++++++++++++++++++++--------
+ 1 file changed, 28 insertions(+), 8 deletions(-)
+
+diff --git a/arch/riscv/kvm/vcpu_onereg.c b/arch/riscv/kvm/vcpu_onereg.c
+index e7ab6cb0064615..a4c8703a96a9f0 100644
+--- a/arch/riscv/kvm/vcpu_onereg.c
++++ b/arch/riscv/kvm/vcpu_onereg.c
+@@ -10,6 +10,7 @@
+ #include <linux/bitops.h>
+ #include <linux/errno.h>
+ #include <linux/err.h>
++#include <linux/nospec.h>
+ #include <linux/uaccess.h>
+ #include <linux/kvm_host.h>
+ #include <asm/cacheflush.h>
+@@ -127,6 +128,7 @@ static int kvm_riscv_vcpu_isa_check_host(unsigned long kvm_ext, unsigned long *g
+ 	    kvm_ext >= ARRAY_SIZE(kvm_isa_ext_arr))
+ 		return -ENOENT;
+ 
++	kvm_ext = array_index_nospec(kvm_ext, ARRAY_SIZE(kvm_isa_ext_arr));
+ 	*guest_ext = kvm_isa_ext_arr[kvm_ext];
+ 	switch (*guest_ext) {
+ 	case RISCV_ISA_EXT_SMNPM:
+@@ -443,13 +445,16 @@ static int kvm_riscv_vcpu_get_reg_core(struct kvm_vcpu *vcpu,
+ 	unsigned long reg_num = reg->id & ~(KVM_REG_ARCH_MASK |
+ 					    KVM_REG_SIZE_MASK |
+ 					    KVM_REG_RISCV_CORE);
++	unsigned long regs_max = sizeof(struct kvm_riscv_core) / sizeof(unsigned long);
+ 	unsigned long reg_val;
+ 
+ 	if (KVM_REG_SIZE(reg->id) != sizeof(unsigned long))
+ 		return -EINVAL;
+-	if (reg_num >= sizeof(struct kvm_riscv_core) / sizeof(unsigned long))
++	if (reg_num >= regs_max)
+ 		return -ENOENT;
+ 
++	reg_num = array_index_nospec(reg_num, regs_max);
++
+ 	if (reg_num == KVM_REG_RISCV_CORE_REG(regs.pc))
+ 		reg_val = cntx->sepc;
+ 	else if (KVM_REG_RISCV_CORE_REG(regs.pc) < reg_num &&
+@@ -476,13 +481,16 @@ static int kvm_riscv_vcpu_set_reg_core(struct kvm_vcpu *vcpu,
+ 	unsigned long reg_num = reg->id & ~(KVM_REG_ARCH_MASK |
+ 					    KVM_REG_SIZE_MASK |
+ 					    KVM_REG_RISCV_CORE);
++	unsigned long regs_max = sizeof(struct kvm_riscv_core) / sizeof(unsigned long);
+ 	unsigned long reg_val;
+ 
+ 	if (KVM_REG_SIZE(reg->id) != sizeof(unsigned long))
+ 		return -EINVAL;
+-	if (reg_num >= sizeof(struct kvm_riscv_core) / sizeof(unsigned long))
++	if (reg_num >= regs_max)
+ 		return -ENOENT;
+ 
++	reg_num = array_index_nospec(reg_num, regs_max);
++
+ 	if (copy_from_user(&reg_val, uaddr, KVM_REG_SIZE(reg->id)))
+ 		return -EFAULT;
+ 
+@@ -507,10 +515,13 @@ static int kvm_riscv_vcpu_general_get_csr(struct kvm_vcpu *vcpu,
+ 					  unsigned long *out_val)
+ {
+ 	struct kvm_vcpu_csr *csr = &vcpu->arch.guest_csr;
++	unsigned long regs_max = sizeof(struct kvm_riscv_csr) / sizeof(unsigned long);
+ 
+-	if (reg_num >= sizeof(struct kvm_riscv_csr) / sizeof(unsigned long))
++	if (reg_num >= regs_max)
+ 		return -ENOENT;
+ 
++	reg_num = array_index_nospec(reg_num, regs_max);
++
+ 	if (reg_num == KVM_REG_RISCV_CSR_REG(sip)) {
+ 		kvm_riscv_vcpu_flush_interrupts(vcpu);
+ 		*out_val = (csr->hvip >> VSIP_TO_HVIP_SHIFT) & VSIP_VALID_MASK;
+@@ -526,10 +537,13 @@ static int kvm_riscv_vcpu_general_set_csr(struct kvm_vcpu *vcpu,
+ 					  unsigned long reg_val)
+ {
+ 	struct kvm_vcpu_csr *csr = &vcpu->arch.guest_csr;
++	unsigned long regs_max = sizeof(struct kvm_riscv_csr) / sizeof(unsigned long);
+ 
+-	if (reg_num >= sizeof(struct kvm_riscv_csr) / sizeof(unsigned long))
++	if (reg_num >= regs_max)
+ 		return -ENOENT;
+ 
++	reg_num = array_index_nospec(reg_num, regs_max);
++
+ 	if (reg_num == KVM_REG_RISCV_CSR_REG(sip)) {
+ 		reg_val &= VSIP_VALID_MASK;
+ 		reg_val <<= VSIP_TO_HVIP_SHIFT;
+@@ -548,11 +562,14 @@ static inline int kvm_riscv_vcpu_smstateen_set_csr(struct kvm_vcpu *vcpu,
+ 						   unsigned long reg_val)
+ {
+ 	struct kvm_vcpu_smstateen_csr *csr = &vcpu->arch.smstateen_csr;
++	unsigned long regs_max = sizeof(struct kvm_riscv_smstateen_csr) /
++		sizeof(unsigned long);
+ 
+-	if (reg_num >= sizeof(struct kvm_riscv_smstateen_csr) /
+-		sizeof(unsigned long))
++	if (reg_num >= regs_max)
+ 		return -EINVAL;
+ 
++	reg_num = array_index_nospec(reg_num, regs_max);
++
+ 	((unsigned long *)csr)[reg_num] = reg_val;
+ 	return 0;
+ }
+@@ -562,11 +579,14 @@ static int kvm_riscv_vcpu_smstateen_get_csr(struct kvm_vcpu *vcpu,
+ 					    unsigned long *out_val)
+ {
+ 	struct kvm_vcpu_smstateen_csr *csr = &vcpu->arch.smstateen_csr;
++	unsigned long regs_max = sizeof(struct kvm_riscv_smstateen_csr) /
++		sizeof(unsigned long);
+ 
+-	if (reg_num >= sizeof(struct kvm_riscv_smstateen_csr) /
+-		sizeof(unsigned long))
++	if (reg_num >= regs_max)
+ 		return -EINVAL;
+ 
++	reg_num = array_index_nospec(reg_num, regs_max);
++
+ 	*out_val = ((unsigned long *)csr)[reg_num];
+ 	return 0;
+ }

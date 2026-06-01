@@ -216,6 +216,7 @@ static void cacheutils_cleanup() {
 // ============================================================================
 
 // Read cycle counter with memory fences (serializing)
+#ifndef CACHEUTILS_TIMER_COUNTER
 __attribute__((always_inline))
 static inline uint64_t rdtsc() {
     uint64_t val;
@@ -224,6 +225,89 @@ static inline uint64_t rdtsc() {
     asm volatile("fence rw,rw" : : : "memory");
     return val;
 }
+#else
+// ----------------------------------------------------------------------------
+// Counter-thread timer (opt-in: build with -DCACHEUTILS_TIMER_COUNTER)
+//
+// High-resolution timing without the rdcycle CSR, which recent kernels disable
+// in userspace. A background thread increments a shared, cache-line aligned
+// counter in a tight loop; rdtsc() reads it. Achieves ~6 cycle resolution on
+// the T-Head C910. Call cacheutils_counter_start() before timing and
+// cacheutils_counter_stop() afterwards. The counter core is configurable via
+// the COUNTER_CORE env var (default 1); pin the measuring thread elsewhere.
+// ----------------------------------------------------------------------------
+typedef struct {
+    _Alignas(64) volatile uint64_t value;
+    char pad[56];
+} cacheutils_counter_t;
+
+static cacheutils_counter_t *g_cacheutils_counter = NULL;
+static pthread_t g_cacheutils_counter_thread;
+static int g_cacheutils_counter_running = 0;
+
+__attribute__((noreturn))
+static void* cacheutils_counter_loop(void* arg) {
+    cacheutils_counter_t *c = (cacheutils_counter_t*)arg;
+    __asm__ __volatile__(
+        "   li      t0, 0\n"
+        "1:\n"
+        "   addi    t0, t0, 1\n"
+        "   sd      t0, (%0)\n"
+        "   nop\n"
+        "   j       1b\n"
+        :: "r"(&c->value)
+        : "t0", "memory"
+    );
+    __builtin_unreachable();
+}
+
+static int cacheutils_counter_start(void) {
+    if (g_cacheutils_counter_running) return 0;
+    g_cacheutils_counter = aligned_alloc(64, sizeof(cacheutils_counter_t));
+    if (!g_cacheutils_counter) return -1;
+    g_cacheutils_counter->value = 0;
+    g_cacheutils_counter_running = 1;
+    if (pthread_create(&g_cacheutils_counter_thread, NULL,
+                       cacheutils_counter_loop, g_cacheutils_counter) != 0) {
+        free(g_cacheutils_counter);
+        g_cacheutils_counter = NULL;
+        g_cacheutils_counter_running = 0;
+        return -1;
+    }
+    char* env = getenv("COUNTER_CORE");
+    int core = env ? atoi(env) : 1;
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    CPU_SET(core, &set);
+    pthread_setaffinity_np(g_cacheutils_counter_thread, sizeof(cpu_set_t), &set);
+    usleep(10000);
+    return 0;
+}
+
+static void cacheutils_counter_stop(void) {
+    if (!g_cacheutils_counter_running) return;
+    pthread_cancel(g_cacheutils_counter_thread);
+    g_cacheutils_counter_running = 0;
+    if (g_cacheutils_counter) {
+        free(g_cacheutils_counter);
+        g_cacheutils_counter = NULL;
+    }
+}
+
+__attribute__((always_inline))
+static inline uint64_t rdtsc() {
+    uint64_t val;
+    __asm__ __volatile__(
+        "fence rw,rw\n"
+        "lr.d %0, (%1)\n"
+        "fence rw,rw\n"
+        : "=r"(val)
+        : "r"(&g_cacheutils_counter->value)
+        : "memory"
+    );
+    return val;
+}
+#endif /* CACHEUTILS_TIMER_COUNTER */
 
 // ============================================================================
 // Cache Operations

@@ -1,0 +1,61 @@
+From c951ff6f6ff0734e67403cee12d76da238c99de3 Mon Sep 17 00:00:00 2001
+From: Lukas Gerlach <lukas.gerlach@cispa.de>
+Date: Tue, 13 Jan 2026 16:08:36 +0100
+Subject: [PATCH] riscv: futex: Mask __user pointers prior to dereference
+
+The RISC-V futex code has explicit dereferencing of user pointers
+when performing atomic operations in response to a futex command.
+Use masking to limit any speculative futex operations to within
+the user address space.
+
+Similar to arm64 commit 91b2d3442f6a ("arm64: futex: Mask __user
+pointers prior to dereference").
+
+Signed-off-by: Lukas Gerlach <lukas.gerlach@cispa.de>
+---
+ arch/riscv/include/asm/futex.h | 11 +++++++----
+ 1 file changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/arch/riscv/include/asm/futex.h b/arch/riscv/include/asm/futex.h
+index 90c86b115e00..15d3b3ddc1c5 100644
+--- a/arch/riscv/include/asm/futex.h
++++ b/arch/riscv/include/asm/futex.h
+@@ -34,11 +34,12 @@
+ }
+ 
+ static inline int
+-arch_futex_atomic_op_inuser(int op, int oparg, int *oval, u32 __user *uaddr)
++arch_futex_atomic_op_inuser(int op, int oparg, int *oval, u32 __user *_uaddr)
+ {
+ 	int oldval = 0, ret = 0;
++	u32 __user *uaddr = uaccess_mask_ptr(_uaddr);
+ 
+-	if (!access_ok(uaddr, sizeof(u32)))
++	if (!access_ok(_uaddr, sizeof(u32)))
+ 		return -EFAULT;
+ 
+ 	switch (op) {
+@@ -73,16 +74,18 @@ arch_futex_atomic_op_inuser(int op, int oparg, int *oval, u32 __user *uaddr)
+ }
+ 
+ static inline int
+-futex_atomic_cmpxchg_inatomic(u32 *uval, u32 __user *uaddr,
++futex_atomic_cmpxchg_inatomic(u32 *uval, u32 __user *_uaddr,
+ 			      u32 oldval, u32 newval)
+ {
+ 	int ret = 0;
+ 	u32 val;
+ 	uintptr_t tmp;
++	u32 __user *uaddr;
+ 
+-	if (!access_ok(uaddr, sizeof(u32)))
++	if (!access_ok(_uaddr, sizeof(u32)))
+ 		return -EFAULT;
+ 
++	uaddr = uaccess_mask_ptr(_uaddr);
+ 	__enable_user_access();
+ 	__asm__ __volatile__ (
+ 	"1:	lr.w %[v],%[u]			        \n"
+-- 
+2.51.0
+
