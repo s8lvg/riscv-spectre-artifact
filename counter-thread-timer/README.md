@@ -29,5 +29,5 @@ On the T-Head C910 this yields ~6 cycle resolution, sufficient for the
 Flush+Reload and Prime+Probe channels used in the paper.
 
 `rdcycle` is used only for calibration. On P550 with recent kernels it must
-be enabled (perf); otherwise build with `make CFLAGS=-DNO_RDCYCLE` to report
-ticks only.
+be enabled by the kernel; otherwise build with `make NO_RDCYCLE=1` to report
+ticks only without replacing the Makefile's required platform flags.

@@ -3,6 +3,12 @@
 CFLAGS += -O2 -g -Wall -Wno-unused-function -pthread -D_GNU_SOURCE
 TARGETS = bench
 
+ifeq ($(NO_RDCYCLE),1)
+    CFLAGS += -DNO_RDCYCLE
+endif
+
+CFLAGS += $(EXTRA_CFLAGS)
+
 # Auto-detect CPU
 CPUINFO := $(shell cat /proc/cpuinfo 2>/dev/null)
 ifneq (,$(findstring p550,$(CPUINFO)))

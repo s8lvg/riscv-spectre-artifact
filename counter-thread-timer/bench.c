@@ -20,15 +20,56 @@
  * Pin the main thread to a different core than the counter, e.g.:
  *   COUNTER_CORE=1 taskset -c 0 ./bench
  */
+#include <errno.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <linux/perf_event.h>
+#include <sys/ioctl.h>
+#include <sys/syscall.h>
 #include "counter_timer.h"
 
 #define SAMPLES   1000000
 #define CAL_LOOPS 2000000
 
 #ifndef NO_RDCYCLE
+static int perf_fd = -1;
+
+static int enable_rdcycle_counter(void) {
+    struct perf_event_attr pe;
+    memset(&pe, 0, sizeof(pe));
+    pe.type = PERF_TYPE_HARDWARE;
+    pe.size = sizeof(pe);
+    pe.config = PERF_COUNT_HW_CPU_CYCLES;
+    pe.disabled = 1;
+    pe.exclude_kernel = 1;
+    pe.exclude_hv = 1;
+
+    perf_fd = syscall(__NR_perf_event_open, &pe, 0, -1, -1, 0);
+    if (perf_fd < 0) {
+        fprintf(stderr, "warning: perf_event_open failed: %s\n", strerror(errno));
+        return -1;
+    }
+
+    if (ioctl(perf_fd, PERF_EVENT_IOC_ENABLE, 0) < 0) {
+        fprintf(stderr, "warning: PERF_EVENT_IOC_ENABLE failed: %s\n", strerror(errno));
+        close(perf_fd);
+        perf_fd = -1;
+        return -1;
+    }
+
+    return 0;
+}
+
+static void disable_rdcycle_counter(void) {
+    if (perf_fd >= 0) {
+        close(perf_fd);
+        perf_fd = -1;
+    }
+}
+
 __attribute__((always_inline))
 static inline uint64_t rdcycle(void) {
     uint64_t v;
@@ -52,15 +93,20 @@ int main(void) {
         return 1;
     }
 
-    double cycles_per_tick = 0.0;
 #ifndef NO_RDCYCLE
+    if (enable_rdcycle_counter() != 0) {
+        fprintf(stderr, "warning: rdcycle calibration may report zero cycles\n");
+    }
+
     /* Calibrate cycles-per-tick. */
+    double cycles_per_tick = 0.0;
     uint64_t c0 = rdcycle(), t0 = ctr_read();
     for (volatile uint64_t i = 0; i < CAL_LOOPS; i++) { }
     uint64_t c1 = rdcycle(), t1 = ctr_read();
     uint64_t dcyc = c1 - c0, dtick = t1 - t0;
     if (dtick == 0) {
         fprintf(stderr, "calibration failed: counter did not advance\n");
+        disable_rdcycle_counter();
         counter_timer_stop();
         return 1;
     }
@@ -88,6 +134,7 @@ int main(void) {
     printf("resolution: %llu ticks\n", (unsigned long long)min_delta);
 #ifndef NO_RDCYCLE
     printf("resolution: %.2f cycles\n", (double)min_delta * cycles_per_tick);
+    disable_rdcycle_counter();
 #endif
 
     counter_timer_stop();
