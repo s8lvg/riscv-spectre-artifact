@@ -28,7 +28,7 @@ endif
 
 all: test
 
-test: main.c ../../libjit.h ../cacheutils.h
+test: main.c ../../libjit.h ../../cacheutils.h
 	$(CC) $(CFLAGS) main.c -o test
 
 clean:

@@ -15,5 +15,5 @@ standalone `.patch` file you can read or apply.
 | `bpf-emit-fence-i-nospec.patch` | riscv, bpf: Emit fence.i for BPF_NOSPEC |
 | `futex-mask-user-pointers.patch` | riscv: futex: Mask __user pointers prior to dereference |
 
-Filenames with a hash are the version merged into mainline Linux (torvalds/linux,
-that commit).
+Filenames with a hash are the version merged into mainline Linux
+(torvalds/linux, that commit).

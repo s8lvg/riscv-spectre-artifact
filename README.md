@@ -7,8 +7,8 @@ Artifact repository accompanying the paper.
 - **`spectre-poc-framework/`** — Unified framework for all 13 Spectre attack configurations (PHT, BTB, RSB, STL) across same-address/cross-address and in-place/out-of-place variants (Section 3).
 - **`microarch-measurements/`** — Measurement code for speculation window and RSB depth analysis (Appendix B).
 - **`barrier-test/`** — Testing framework for candidate speculation barrier instructions (Section 5.3).
-- **`gadet-scanning/`** — Smatch and CodeQL configurations for RISC-V kernel gadget analysis (Section 4.1).
-- **`specbuild/`** — Semantic embedding-based tool for cross-architecture mitigation diffing to identify missing RISC-V mitigations (Section 4.1).
+- **`gadet-scanning/`** — Smatch and CodeQL configurations for RISC-V kernel gadget analysis, plus the semantic embedding-based mitigation-diffing tool used to identify missing RISC-V mitigations (Section 4.1).
+- **`specbuild/`** — SPEC CPU 2017 cross-build setup for the compiler mitigation benchmarks (Section 5.2).
 - **`branchless-jit-dispatch/`** — Modified uBPF interpreter with branchless dispatch implementation (Section 5.2).
 - **`cacheutils.h`** — Cache side-channel library including Flush+Reload, Evict+Reload, Prime+Probe with eviction set construction, and a counter-thread timer for C910 and P550 (Section 3.2). The counter-thread timer is opt-in: build with `-DCACHEUTILS_TIMER_COUNTER` to use it instead of `rdcycle`.
 - **`counter-thread-timer/`** — Standalone counter-thread timer plus a benchmark that measures its resolution (~6 cycle on C910), backing the timing claim in Section 3.2.

@@ -21,4 +21,5 @@ mitigation_diffing/.cache/
 mitigation_diffing/.embedding_cache/
 mitigation_diffing/*.json
 mitigation_diffing/*.csv
+!mitigation_diffing/mitigations.csv
 mitigation_diffing/*.html

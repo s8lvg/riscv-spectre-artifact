@@ -1,0 +1,76 @@
+# Spectre v1 mitigation sites across architectures
+# Format: file_path,function_name,mitigation_type
+
+# === x86 Syscall Entry ===
+arch/x86/entry/syscall_64.c,do_syscall_x64,array_index_nospec
+arch/x86/entry/syscall_64.c,do_syscall_x32,array_index_nospec
+arch/x86/entry/syscall_32.c,do_int80_syscall_32,array_index_nospec
+arch/x86/entry/common.c,do_fast_syscall_32,array_index_nospec
+
+# === x86 User Access ===
+arch/x86/lib/getuser.S,__get_user_1,pointer_masking
+arch/x86/lib/getuser.S,__get_user_2,pointer_masking
+arch/x86/lib/getuser.S,__get_user_4,pointer_masking
+arch/x86/lib/getuser.S,__get_user_8,pointer_masking
+
+# === x86 KVM ===
+arch/x86/kvm/x86.c,kvm_sched_yield,array_index_nospec
+arch/x86/kvm/x86.c,kvm_set_dr,array_index_nospec
+arch/x86/kvm/x86.c,kvm_get_dr,array_index_nospec
+arch/x86/kvm/lapic.c,__pv_send_ipi,array_index_nospec
+arch/x86/kvm/lapic.c,kvm_apic_set_irq,array_index_nospec
+arch/x86/kvm/vmx/vmx.c,vmx_handle_exit,array_index_nospec
+arch/x86/kvm/vmx/vmcs12.h,vmcs12_read_any,array_index_nospec
+arch/x86/kvm/vmx/pmu_intel.c,intel_pmu_get_msr,array_index_nospec
+arch/x86/kvm/svm/pmu.c,amd_pmu_get_msr,array_index_nospec
+arch/x86/kvm/ioapic.c,ioapic_read_indirect,array_index_nospec
+arch/x86/kvm/ioapic.c,ioapic_set_irq,array_index_nospec
+arch/x86/kvm/emulate.c,x86_emulate_insn,array_index_nospec
+arch/x86/kvm/hyperv.c,kvm_hv_get_msr,array_index_nospec
+
+# === x86 Memory Management ===
+arch/x86/mm/fault.c,do_user_addr_fault,barrier_nospec
+
+# === x86 SEV ===
+arch/x86/virt/svm/sev.c,snp_handle_ext_guest_request,array_index_nospec
+arch/x86/virt/svm/sev.c,snp_copy_data_to_ghcb,array_index_nospec
+
+# === x86 Perf Events ===
+arch/x86/events/core.c,set_ext_hw_attr,array_index_nospec
+arch/x86/events/intel/cstate.c,cstate_event_init,array_index_nospec
+arch/x86/events/rapl.c,rapl_event_init,array_index_nospec
+arch/x86/events/msr.c,msr_event_init,array_index_nospec
+
+# === ARM64 Syscall Entry ===
+arch/arm64/kernel/syscall.c,invoke_syscall,array_index_nospec
+
+# === ARM64 User Access ===
+arch/arm64/include/asm/uaccess.h,uaccess_mask_ptr,pointer_masking
+arch/arm64/include/asm/futex.h,arch_futex_atomic_op_inuser,pointer_masking
+
+# === ARM64 Debug/Ptrace ===
+arch/arm64/kernel/ptrace.c,ptrace_hbp_get_resource_info,array_index_nospec
+arch/arm64/kernel/ptrace.c,hw_break_get,array_index_nospec
+arch/arm64/kernel/ptrace.c,hw_break_set,array_index_nospec
+
+# === ARM64 KVM ===
+arch/arm64/kvm/vgic/vgic.c,vgic_get_irq,array_index_nospec
+arch/arm64/kvm/vgic/vgic-mmio-v2.c,vgic_mmio_read_apr,array_index_nospec
+arch/arm64/kvm/guest.c,sve_reg_to_region,array_index_nospec
+
+# === PowerPC Syscall Entry ===
+arch/powerpc/kernel/syscall.c,system_call_exception,barrier_nospec
+
+# === PowerPC User Access ===
+arch/powerpc/include/asm/uaccess.h,raw_copy_from_user,barrier_nospec
+arch/powerpc/include/asm/kup.h,allow_read_from_user,barrier_nospec
+
+# === PowerPC Ptrace ===
+arch/powerpc/kernel/ptrace/ptrace-view.c,gpr_get,array_index_nospec
+arch/powerpc/kernel/ptrace/ptrace-view.c,gpr_set,array_index_nospec
+
+# === PowerPC RTAS ===
+arch/powerpc/kernel/rtas.c,sys_rtas,array_index_nospec
+
+# === BPF JIT ===
+arch/x86/net/bpf_jit_comp.c,do_jit,lfence

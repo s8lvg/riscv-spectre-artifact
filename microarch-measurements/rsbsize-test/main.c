@@ -4,7 +4,7 @@
 #include <string.h>
 
 size_t CACHE_MISS = 0;
-#include "../cacheutils.h"
+#include "../../cacheutils.h"
 #include "../../libjit.h"
 
 #define MAX_DEPTH 40
