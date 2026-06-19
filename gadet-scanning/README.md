@@ -18,71 +18,42 @@ cd ../codeql && ./setup.sh
 cd ..
 
 # Run analysis (all tools: Smatch, CodeQL)
-./run-analysis.py linux-6.6 ~/linux-riscv
+./run-analysis.py linux-6.6 ~/linux-6.6
 
 # Run single tool
-./run-analysis.py linux-6.6 ~/linux-riscv --tool smatch
-./run-analysis.py linux-6.6 ~/linux-riscv --tool codeql
+./run-analysis.py linux-6.6 ~/linux-6.6 --tool smatch
+./run-analysis.py linux-6.6 ~/linux-6.6 --tool codeql
 
 # Compare tools (Smatch vs CodeQL)
 ./compare-tools.py linux-6.6
 ```
 
-## Kernel Sources for lab64
+## Kernel Source
 
-The lab64 machine runs **T-Head TH1520** (MilkV Meles) with kernel **5.10.113-th1520** built by RevyOS.
+The results in the paper are produced against **mainline Linux v6.6** (the kernel version shipping with the C910).
 
 ### Getting the Kernel Source
 
-**Primary source repository:**
 ```bash
-git clone https://github.com/revyos/thead-kernel.git
-cd thead-kernel
-git checkout lpi4a
+git clone --depth 1 --branch v6.6 https://github.com/torvalds/linux.git ~/linux-6.6
 ```
-
-**Alternative (MilkV Meles-specific):**
-```bash
-git clone https://github.com/milkv-meles/thead-kernel.git
-cd thead-kernel
-git checkout meles
-```
-
-Both repositories contain **Linux 5.10.113** with T-Head TH1520-specific patches.
-
-### Kernel Information
-
-**On lab64:**
-- **Kernel**: 5.10.113-th1520
-- **Build date**: May 31, 2024
-- **Builder**: RevyOS (builder@revyos-riscv-builder)
-- **Chip**: T-Head TH1520 (quad-core C910 + C906 DSP)
 
 ### Configuring the Kernel
 
+Smatch and CodeQL build the kernel, so it must be configured for RISC-V first
+(mitigation diffing needs only the source tree, no configuration or build):
+
 ```bash
-cd thead-kernel
-
-# Get the running kernel config from lab64
-scp lab64:/boot/config-5.10.113-th1520 .config
-
-# Or use the default TH1520 config
-make ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- th1520_defconfig
-
-# Prepare for analysis
+cd ~/linux-6.6
+make ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- defconfig
 make ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- prepare
 ```
 
-### Running Analysis on lab64 Kernel
+### Running Analysis
 
 ```bash
-git clone https://github.com/revyos/thead-kernel.git ~/thead-kernel
-cd ~/thead-kernel && git checkout lpi4a
-
-scp lab64:/boot/config-5.10.113-th1520 .config
-
-cd ~/experiments/spectre-gadget-scan
-./run-analysis.py th1520-5.10 ~/thead-kernel --use-existing-config
+cd /path/to/gadet-scanning
+./run-analysis.py linux-6.6 ~/linux-6.6
 ```
 
 ## Directory Structure
@@ -109,7 +80,7 @@ spectre-gadget-scan/
 
 1. **Run analysis**:
    ```bash
-   ./run-analysis.py linux-6.6 ~/linux-riscv
+   ./run-analysis.py linux-6.6 ~/linux-6.6
    ```
 
 2. **Compare Smatch vs CodeQL**:
