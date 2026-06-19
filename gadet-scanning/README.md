@@ -1,32 +1,62 @@
 # Spectre Gadget Detection for Linux Kernel (RISC-V)
 
-Spectre v1 gadget detection for RISC-V using Smatch and CodeQL.
+Spectre v1 gadget detection for RISC-V using Smatch, CodeQL, and mitigation diffing.
 
 ## Prerequisites
 
-1. **RISC-V cross-compiler**: `riscv64-linux-gnu-gcc`
-2. **Python 3.6+**
-3. **Disk space**: ~50GB
-4. **Kernel source**: Configured kernel tree
+Recommended setup:
 
-## Quick Start
+1. **Docker** on an x86_64 Linux host
+2. **Disk space**: ~50GB for kernel builds and CodeQL databases
+3. **Kernel source**: Linux v6.6 source tree
+
+The Docker image contains the RISC-V cross compiler, Smatch, CodeQL, and the
+Python dependencies for mitigation diffing.
+
+## Docker Quick Start
 
 ```bash
-# Setup (one time)
-cd smatch && ./setup.sh
-cd ../codeql && ./setup.sh
-cd ..
+# Build the analysis image.
+cd /path/to/riscv-spectre-artifact/gadet-scanning
+docker build -t riscv-gadget-scan .
 
-# Run analysis (all tools: Smatch, CodeQL)
-./run-analysis.py linux-6.6 ~/linux-6.6
+# Get the kernel source.
+git clone --depth 1 --branch v6.6 https://github.com/torvalds/linux.git ~/linux-6.6
+mkdir -p results .hf-cache mitigation_diffing/.embedding_cache
 
-# Run single tool
-./run-analysis.py linux-6.6 ~/linux-6.6 --tool smatch
-./run-analysis.py linux-6.6 ~/linux-6.6 --tool codeql
+# Run Smatch.
+docker run --rm \
+  -v ~/linux-6.6:/kernel \
+  -v "$PWD/results:/opt/gadet-scanning/results" \
+  riscv-gadget-scan \
+  ./run-analysis.py linux-6.6 /kernel --tool smatch
+
+# Run CodeQL. This creates a reusable database in results/linux-6.6/codeql-db/.
+docker run --rm \
+  -v ~/linux-6.6:/kernel \
+  -v "$PWD/results:/opt/gadet-scanning/results" \
+  riscv-gadget-scan \
+  ./run-analysis.py linux-6.6 /kernel --tool codeql
+
+# Run mitigation diffing. The cache mounts avoid repeated model downloads and
+# repeated RISC-V embedding generation.
+docker run --rm \
+  -v ~/linux-6.6:/kernel:ro \
+  -v "$PWD/.hf-cache:/root/.cache" \
+  -v "$PWD/mitigation_diffing/.embedding_cache:/opt/gadet-scanning/mitigation_diffing/.embedding_cache" \
+  riscv-gadget-scan \
+  bash -lc 'cd mitigation_diffing && mitigation-diffing /kernel -m mitigations.csv'
 
 # Compare tools (Smatch vs CodeQL)
-./compare-tools.py linux-6.6
+docker run --rm \
+  -v "$PWD/results:/opt/gadet-scanning/results" \
+  riscv-gadget-scan \
+  ./compare-tools.py linux-6.6
 ```
+
+`./run-analysis.py linux-6.6 /kernel` runs both Smatch and CodeQL. Running the
+tools separately is often more convenient because the full CodeQL database build
+is substantially heavier than the Smatch pass.
 
 ## Kernel Source
 
@@ -38,15 +68,29 @@ The results in the paper are produced against **mainline Linux v6.6** (the kerne
 git clone --depth 1 --branch v6.6 https://github.com/torvalds/linux.git ~/linux-6.6
 ```
 
-### Configuring the Kernel
+### Kernel Configuration
 
-Smatch and CodeQL build the kernel, so it must be configured for RISC-V first
-(mitigation diffing needs only the source tree, no configuration or build):
+The Docker workflow uses the shipped RISC-V config
+`configs/linux-6.6-riscv-smatch.config`. The analysis script copies it into the
+kernel tree and runs `make olddefconfig` before Smatch or CodeQL. The config
+disables Nouveau because Smatch reports non-Spectre checker errors in that
+driver on Linux v6.6.
+
+Mitigation diffing needs only the source tree, no kernel configuration or build.
+
+### Manual Setup
+
+If Docker is not available, install the dependencies manually:
 
 ```bash
-cd ~/linux-6.6
-make ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- defconfig
-make ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- prepare
+sudo apt-get install build-essential gcc-riscv64-linux-gnu g++-riscv64-linux-gnu \
+  bc bison flex git libelf-dev libncurses-dev libsqlite3-dev libssl-dev make \
+  pkg-config python3 python3-pip python3-venv sqlite3 universal-ctags unzip zstd
+
+cd /path/to/riscv-spectre-artifact/gadet-scanning
+cd smatch && ./setup.sh
+cd ../codeql && ./setup.sh
+cd ../mitigation_diffing && python3 -m pip install -e .
 ```
 
 ### Running Analysis
@@ -54,6 +98,8 @@ make ARCH=riscv CROSS_COMPILE=riscv64-linux-gnu- prepare
 ```bash
 cd /path/to/gadet-scanning
 ./run-analysis.py linux-6.6 ~/linux-6.6
+cd mitigation_diffing
+mitigation-diffing ~/linux-6.6 -m mitigations.csv
 ```
 
 ## Directory Structure
@@ -62,6 +108,7 @@ cd /path/to/gadet-scanning
 spectre-gadget-scan/
   smatch/                           # Smatch setup and source
   codeql/                           # CodeQL setup, queries
+  configs/                          # Shipped kernel configs for reproducible scans
   mitigation_diffing/               # Cross-arch mitigation comparison (pip package)
   results/
     <kernel-version>/               # per-kernel results
@@ -78,22 +125,28 @@ spectre-gadget-scan/
 
 ## Workflow
 
-1. **Run analysis**:
+1. **Run Smatch and CodeQL**:
    ```bash
    ./run-analysis.py linux-6.6 ~/linux-6.6
    ```
 
-2. **Compare Smatch vs CodeQL**:
+2. **Run mitigation diffing**:
+   ```bash
+   cd mitigation_diffing
+   mitigation-diffing ~/linux-6.6 -m mitigations.csv
+   ```
+
+3. **Compare Smatch vs CodeQL**:
    ```bash
    ./compare-tools.py linux-6.6
    ```
 
-3. **Sync results to local machine**:
+4. **Sync results to local machine**:
    ```bash
    ./sync-from-remote.py linux-6.6
    ```
 
-4. **Test exploitability** on hardware:
+5. **Test exploitability** on hardware:
    - C910 (lab64)
    - P550 (lab77)
 

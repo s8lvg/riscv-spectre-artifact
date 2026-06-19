@@ -1,0 +1,15 @@
+results/
+analysis_results/
+.hf-cache/
+
+codeql/codeql-home/
+smatch/smatch-src/
+
+mitigation_diffing/.cache/
+mitigation_diffing/.embedding_cache/
+mitigation_diffing/**/*.pyc
+mitigation_diffing/**/__pycache__/
+
+**/.git/
+**/__pycache__/
+*.pyc

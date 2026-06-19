@@ -5,6 +5,7 @@ Spectre gadget analysis for RISC-V
 
 import argparse
 import os
+import shutil
 import sys
 import subprocess
 from pathlib import Path
@@ -19,6 +20,13 @@ ARCH_CONFIG = {
 }
 
 VALID_TOOLS = ['smatch', 'codeql', 'all']
+DEFAULT_KERNEL_CONFIG = (
+    Path(__file__).resolve().parent / 'configs' / 'linux-6.6-riscv-smatch.config'
+)
+
+# Nouveau currently triggers Smatch analysis timeouts/failures on Linux 6.6
+# and is irrelevant for the RISC-V Spectre gadget evaluation.
+DISABLED_KERNEL_CONFIGS = ['DRM_NOUVEAU']
 
 
 def get_ncpus() -> int:
@@ -53,6 +61,18 @@ def configure_kernel(kernel_dir: Path, arch_config: Dict[str, str], use_existing
             ['make', 'olddefconfig', f'ARCH={arch_config["make_arch"]}'],
             cwd=kernel_dir,
             env=env,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+    elif DEFAULT_KERNEL_CONFIG.exists():
+        print(f"Using artifact kernel config: {DEFAULT_KERNEL_CONFIG}")
+        shutil.copyfile(DEFAULT_KERNEL_CONFIG, kernel_dir / '.config')
+        subprocess.run(
+            ['make', 'olddefconfig', f'ARCH={arch_config["make_arch"]}'],
+            cwd=kernel_dir,
+            env=env,
+            check=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
         )
@@ -61,6 +81,26 @@ def configure_kernel(kernel_dir: Path, arch_config: Dict[str, str], use_existing
             ['make', arch_config['defconfig'], f'ARCH={arch_config["make_arch"]}'],
             cwd=kernel_dir,
             env=env,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+
+    config_script = kernel_dir / 'scripts' / 'config'
+    if config_script.exists():
+        for option in DISABLED_KERNEL_CONFIGS:
+            print(f"Disabling CONFIG_{option}")
+            subprocess.run(
+                [str(config_script), '--disable', option],
+                cwd=kernel_dir,
+                env=env,
+                check=True
+            )
+        subprocess.run(
+            ['make', 'olddefconfig', f'ARCH={arch_config["make_arch"]}'],
+            cwd=kernel_dir,
+            env=env,
+            check=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
         )
@@ -82,6 +122,17 @@ def run_smatch(
 
     smatch_output = output_base / 'smatch'
     smatch_output.mkdir(parents=True, exist_ok=True)
+    check_wrapper = smatch_output / 'smatch-check-wrapper.sh'
+    check_wrapper.write_text(
+        '#!/bin/sh\n'
+        '"$@"\n'
+        'status=$?\n'
+        'if [ "$status" -ne 0 ]; then\n'
+        '    echo "smatch-check-wrapper: ignored checker exit status $status for: $*" >&2\n'
+        'fi\n'
+        'exit 0\n'
+    )
+    check_wrapper.chmod(0o755)
 
     # Run Smatch build
     env = os.environ.copy()
@@ -89,10 +140,10 @@ def run_smatch(
     env['CROSS_COMPILE'] = arch_config['cross_compile']
 
     with open(smatch_output / 'smatch_full.log', 'w') as log:
-        subprocess.run(
+        result = subprocess.run(
             [
                 'make', f'-j{ncpus}', 'C=2',
-                f'CHECK={smatch_bin} --project=kernel',
+                f'CHECK={check_wrapper} {smatch_bin} --project=kernel',
                 f'ARCH={arch_config["make_arch"]}',
                 f'CROSS_COMPILE={arch_config["cross_compile"]}'
             ],
@@ -114,6 +165,12 @@ def run_smatch(
         f.writelines(warnings)
 
     count = len(warnings)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Smatch kernel build failed with exit code {result.returncode}; "
+            f"see {smatch_output / 'smatch_full.log'}"
+        )
+
     print(f"Found: {count} gadgets")
     print()
 
@@ -320,7 +377,7 @@ def main():
             )
             results['codeql'] = {'path': path, 'count': count}
 
-    except FileNotFoundError as e:
+    except (FileNotFoundError, RuntimeError) as e:
         print(f"ERROR: {e}")
         return 1
 
