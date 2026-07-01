@@ -1,6 +1,6 @@
 #!/bin/bash
 # Setup CodeQL for Spectre gadget detection
-# Host: x86_64 Linux (lab25)
+# Host: x86_64 Linux
 # Target: RISC-V kernel source code
 
 set -e

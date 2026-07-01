@@ -17,7 +17,6 @@ Python dependencies for mitigation diffing.
 
 ```bash
 # Build the analysis image.
-cd /path/to/riscv-spectre-artifact/gadet-scanning
 docker build -t riscv-gadget-scan .
 
 # Get the kernel source.
@@ -87,7 +86,6 @@ sudo apt-get install build-essential gcc-riscv64-linux-gnu g++-riscv64-linux-gnu
   bc bison flex git libelf-dev libncurses-dev libsqlite3-dev libssl-dev make \
   pkg-config python3 python3-pip python3-venv sqlite3 universal-ctags unzip zstd
 
-cd /path/to/riscv-spectre-artifact/gadet-scanning
 cd smatch && ./setup.sh
 cd ../codeql && ./setup.sh
 cd ../mitigation_diffing && python3 -m pip install -e .
@@ -96,7 +94,6 @@ cd ../mitigation_diffing && python3 -m pip install -e .
 ### Running Analysis
 
 ```bash
-cd /path/to/gadet-scanning
 ./run-analysis.py linux-6.6 ~/linux-6.6
 cd mitigation_diffing
 mitigation-diffing ~/linux-6.6 -m mitigations.csv
@@ -146,9 +143,6 @@ spectre-gadget-scan/
    ./sync-from-remote.py linux-6.6
    ```
 
-5. **Test exploitability** on hardware:
-   - C910 (lab64)
-   - P550 (lab77)
 
 ## Scripts
 

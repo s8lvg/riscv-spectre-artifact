@@ -45,14 +45,13 @@ See [compilers/README.md](compilers/README.md) for details on mitigations and re
 
 ```bash
 python3 build.py -l                              # List targets
-python3 build.py -t lab46 --benchmarks=505.mcf_r # Single benchmark
-python3 build.py -t lab46 --benchmarks=intrate   # Integer suite
-python3 build.py -t lab46-llvm                   # All LLVM mitigations
+python3 build.py -t target --benchmarks=505.mcf_r # Single benchmark
+python3 build.py -t target --benchmarks=intrate   # Integer suite
 ```
 
 ## Running on Target
 
 ```bash
-scp -r packages/lab46-riscv64-gcc target:~/cpu2017
+scp -r packages/target target:~/cpu2017
 ssh target "cd ~/cpu2017 && ./run.sh 505.mcf_r"
 ```

@@ -38,7 +38,7 @@
 // Platform Configuration
 // ============================================================================
 
-#if defined(P550) || defined(LAB77)
+#if defined(P550)
     #define CACHEUTILS_USE_EVICTION
 #endif
 

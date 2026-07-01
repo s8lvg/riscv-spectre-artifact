@@ -197,15 +197,6 @@ def detect_cpu():
         if ("SiFive" in cpuinfo or "p550" in cpuinfo.lower()):
             return "P550"
 
-        # Check hostname as fallback
-        result = subprocess.run(["hostname"], capture_output=True,
-                                text=True, check=True)
-        hostname = result.stdout.strip()
-        if "lab77" in hostname:
-            return "P550"
-        if "lab64" in hostname or "lab46" in hostname:
-            return "C910"
-
         return None
     except (OSError, subprocess.CalledProcessError):
         return None

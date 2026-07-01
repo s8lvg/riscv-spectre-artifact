@@ -5,10 +5,11 @@ Measures Return Stack Buffer (RSB) depth on RISC-V processors.
 ## Method
 
 Uses JIT-generated nested function calls of increasing depth:
-- `fun[0]`: returns immediately
+- `fun[0]`: records the start timestamp, then returns
 - `fun[N]`: calls `fun[N-1]`, then returns
 
-Timing `fun[N]` reveals RSB overflow depth via performance cliff.
+We time after all calls have been executed until the end of the return.
+This prevents measuring the overhead the calls have. 
 
 ## Usage
 
@@ -17,10 +18,10 @@ make
 ./test
 ```
 
-Results printed to stdout and saved to `log.txt`.
+Results printed to stdout and saved to `log.txt`. Deltas are saved to
+`log_delta.txt`.
 
 ## Implementation
 
 - Uses `libjit.h` to generate compact PC-relative call chains
-- Filters interrupt outliers (>1000 cycles)
 - Auto-detects C910/P550 for timing infrastructure

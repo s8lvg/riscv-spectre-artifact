@@ -5,7 +5,7 @@ Kernel module to inspect T-Head C910 MHCR register via userspace interface.
 ## Quick Start
 
 ```bash
-# Build (on lab46 - C910 machine)
+# Build
 make
 
 # Load module (creates /proc/c910_predictors)

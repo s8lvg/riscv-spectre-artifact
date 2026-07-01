@@ -116,9 +116,9 @@ def main():
         epilog="""
 Examples:
   python3 build.py -l                              # List targets
-  python3 build.py -t lab46 --benchmarks=505.mcf_r # Single benchmark
-  python3 build.py -t lab46 --benchmarks=intrate   # Integer benchmarks
-  python3 build.py -t lab46                        # All benchmarks (default)
+  python3 build.py -t target --benchmarks=505.mcf_r # Single benchmark
+  python3 build.py -t target --benchmarks=intrate   # Integer benchmarks
+  python3 build.py -t target                        # All benchmarks (default)
         """,
     )
     parser.add_argument("config_file", nargs="?", default="spec-build.yaml")

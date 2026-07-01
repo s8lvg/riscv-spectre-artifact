@@ -32,6 +32,6 @@ test: main.c ../../libjit.h ../../cacheutils.h
 	$(CC) $(CFLAGS) main.c -o test
 
 clean:
-	rm -f test log.txt
+	rm -f test log.txt log_delta.txt
 
 .PHONY: all clean

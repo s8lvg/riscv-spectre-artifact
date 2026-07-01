@@ -12,10 +12,7 @@ Measures speculation window length with different branch dependencies using `blt
 All tests use: `if (value >= bound) skip_probe` where value=100 and bound=10
 
 ## Building
-Compile on lab46 (C910) or lab77 (P550):
 ```bash
-ssh lab46  # or lab77
-cd experiments/speculation-window-extended
 make
 ./main
 ```

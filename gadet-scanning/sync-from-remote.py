@@ -53,7 +53,7 @@ Downloads:
 
 Example:
   %(prog)s linux-6.6
-  %(prog)s linux-6.6 --remote lab77
+  %(prog)s linux-6.6 --remote hostname
         """
     )
 
@@ -63,8 +63,7 @@ Example:
     )
     parser.add_argument(
         '--remote',
-        default='lab25',
-        help='Remote hostname (default: lab25)'
+        help='Remote hostname'
     )
 
     return parser.parse_args()

@@ -12,8 +12,6 @@ Spectre-BTB mitigation that JIT-compiles direct branches instead of using retpol
 ## Build & Run
 
 ```bash
-ssh lab46
-cd experiments/branchless-jit-dispatch
 make
 ./dispatch
 ```

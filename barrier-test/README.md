@@ -11,8 +11,8 @@ If the barrier stops speculation, the secret-dependent access will not be execut
 
 ```
 make
-./barrier_test
-./barrier_test_rsb
+sudo ./barrier_test
+sudo ./barrier_test_rsb
 ```
 
 ## Results

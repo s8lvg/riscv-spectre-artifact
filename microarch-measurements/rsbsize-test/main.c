@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+
 #include <stddef.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -23,23 +25,62 @@ uint64_t results[MAX_DEPTH] = {0};
 /* Global pointers for use in recursive measurement function */
 static void** g_funcs;
 
+static void** jit_rsb_return_timestamp_chain(jit_buf_t* buf, size_t depth) {
+    void** funcs = malloc(depth * sizeof(void*));
+    if (!funcs) {
+        return NULL;
+    }
+
+    for (size_t i = 0; i < depth; i++) {
+        funcs[i] = jit_get_pc(buf);
+
+        if (i == 0) {
+            /*
+             * Start timing immediately before the nested returns unwind.
+             * The cycle value is returned in a0 to the C harness.
+             */
+            jit_fence_rw_rw(buf);
+            jit_rdcycle(buf, A0);
+            jit_fence_rw_rw(buf);
+            jit_ret(buf);
+        } else {
+            /* Save/restore architectural ra; the hardware RAS is populated by jal. */
+            jit_addi(buf, SP, SP, -16);
+            jit_sd(buf, RA, SP, 0);
+
+            void* current_pc = jit_get_pc(buf);
+            int32_t offset = (int32_t)((char*)funcs[i - 1] - (char*)current_pc);
+            jit_jal(buf, RA, offset);
+
+            jit_ld(buf, RA, SP, 0);
+            jit_addi(buf, SP, SP, 16);
+            jit_ret(buf);
+        }
+    }
+
+    jit_finalize(buf);
+    return funcs;
+}
+
 /*
- * Measure a single depth from inside the RSB-filling recursion.
- * Called at the bottom of the recursion where RSB is in known state.
+ * Measure only the return side of the generated call chain.
+ *
+ * The generated leaf reads rdcycle into a0. The timed interval therefore starts
+ * after all direct calls have already executed and just before the nested
+ * returns begin. The harness records the end timestamp after the outer return.
  */
 static __attribute__((noinline)) uint64_t measure_single(int depth) {
-    void (*fn)(void) = (void(*)(void))g_funcs[depth];
+    uint64_t (*fn)(void) = (uint64_t(*)(void))g_funcs[depth];
     uint64_t min_time = UINT64_MAX;
 
     /* Warmup */
     for (size_t i = 0; i < WARMUP; i++) {
-        fn();
+        NO_OPT(fn());
     }
 
     /* Measure minimum time */
     for (size_t i = 0; i < RUNS; i++) {
-        uint64_t start = rdtsc();
-        fn();
+        uint64_t start = fn();
         uint64_t end = rdtsc();
 
         uint64_t delta = end - start;
@@ -79,8 +120,8 @@ int main(void){
         return 1;
     }
 
-    /* Generate RSB test chain */
-    g_funcs = jit_rsb_chain(buf, MAX_DEPTH);
+    /* Generate RSB test chain with leaf-side timestamping */
+    g_funcs = jit_rsb_return_timestamp_chain(buf, MAX_DEPTH);
     if (!g_funcs) {
         fprintf(stderr, "Failed to generate RSB chain\n");
         jit_free(buf);
